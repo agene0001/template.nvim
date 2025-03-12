@@ -26,8 +26,7 @@ renderer.register_builtins = function()
   renderer.register('{{_date_}}', function(_) return os.date('%Y-%m-%d %H:%M:%S') end)
   renderer.register(cursor_pattern, function(_) return '' end)
   renderer.register('{{_file_name_}}', function(_) return fn.expand('%:t:r') end)
-  renderer.register('{{_project_name_}}', function(_)
-  return data.project_name or data.file_name
+  renderer.register('{{_project_name_}}', function(_) return temp.project_name or ""
 end)
   renderer.register('{{_author_}}', function(_) return temp.author end)
   renderer.register('{{_email_}}', function(_) return temp.email end)
@@ -439,7 +438,7 @@ function temp:generate_project(args)
     vim.notify('[Template.nvim] Missing project name or template name', vim.log.levels.ERROR)
     return
   end
-  
+ temp.project_name = data.project_name
   -- Get source template directory
   local template_dir = fs.normalize(temp.temp_dir .. sep .. 'project_templates' .. sep .. data.tp_name)
   local stat = uv.fs_stat(template_dir)
@@ -497,7 +496,7 @@ function temp.setup(config)
 
   temp.author = config.author and config.author or ''
   temp.email = config.email and config.email or ''
-
+  
   local fts = vim.tbl_keys(temp.get_temp_list())
 
   if #fts == 0 then
