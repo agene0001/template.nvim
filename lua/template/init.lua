@@ -35,7 +35,7 @@ renderer.register_builtins = function()
     local var_name = matched_expression:match('{{_variable:(.-)_}}')
     
     -- If we already have this variable in the current session, use it
-    if session_variables[var_name] then
+    if session_variables[var_name] and session_variables[var_name] ~= nil then
       return session_variables[var_name]
     end
     
