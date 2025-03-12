@@ -32,8 +32,13 @@ renderer.register_builtins = function()
   -- Enhanced variable handler with name support
   renderer.register('{{_variable:(.-)_}}', function(matched_expression)
     -- Extract the variable name from the pattern
+        print("Matched Expression: " .. vim.inspect(matched_expression)) -- Debugging
     local var_name = matched_expression:match('{{_variable:(.-)_}}')
-    
+        print("Var Name (Initial): " .. vim.inspect(var_name)) -- Debugging
+    if not var_name then
+        vim.notify("Invalid variable pattern: " .. matched_expression, vim.log.levels.ERROR)
+        return ""
+    end
     -- If we already have this variable in the current session, use it
     if session_variables[var_name] and session_variables[var_name] ~= nil then
       return session_variables[var_name]
