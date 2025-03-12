@@ -69,42 +69,59 @@ renderer.render_line = function(line)
 end
 
 function temp.get_temp_list()
+  -- Normalize the temp directory path
   temp.temp_dir = fs.normalize(temp.temp_dir)
+  
+  -- Table to store results
   local res = {}
 
+  -- Find files and links in the directory
   local result = vim.fs.find(function(name)
-    return name:match('.*')
+    return name:match('.*')  -- Match all files
   end, { type = 'file', path = temp.temp_dir, limit = math.huge })
-
+  
   local link = vim.fs.find(function(name)
-    return name:match('.*')
+    return name:match('.*')  -- Match all links
   end, { type = 'link', path = temp.temp_dir, limit = math.huge })
 
+  -- Combine files and links
   result = vim.list_extend(result, link)
 
+  -- Iterate through the found files and determine filetypes
   for _, name in ipairs(result) do
+    -- Determine the filetype using vim.filetype
     local ft = vim.filetype.match({ filename = name })
+
+    -- Handle 'smarty' files with specific first-line processing
     if ft == 'smarty' then
       local first_row = vim.fn.readfile(name, '', 1)[1]
       ft = vim.split(first_row, '%s')[2]
     end
+
+    -- If no filetype is found, determine based on file extension
     if not ft then
       if name:match("%.h$") then
-        ft = "cpp"  -- or "c" for C headers
+        ft = "c"  -- C header files
+      elseif name:match("%.html?$") then
+        ft = "html"  -- HTML files
       end
     end
+
+    -- If a filetype is determined, categorize the file
     if ft then
       if not res[ft] then
         res[ft] = {}
       end
-      res[ft][#res[ft] + 1] = name
+      table.insert(res[ft], name)
     else
+      -- Log a warning if no filetype could be determined
       vim.notify('[Template.nvim] Could not find the filetype of template file ' .. name, vim.log.levels.INFO)
     end
   end
 
   return res
 end
+
 
 -- Get list of project templates
 function temp.get_project_templates()
