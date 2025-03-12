@@ -26,15 +26,16 @@ renderer.register_builtins = function()
   renderer.register('{{_date_}}', function(_) return os.date('%Y-%m-%d %H:%M:%S') end)
   renderer.register(cursor_pattern, function(_) return '' end)
   renderer.register('{{_file_name_}}', function(_) return fn.expand('%:t:r') end)
+  renderer.register('{{_project_name_}}', function(_)
+  return data.project_name or data.file_name
+end)
   renderer.register('{{_author_}}', function(_) return temp.author end)
   renderer.register('{{_email_}}', function(_) return temp.email end)
   
   -- Enhanced variable handler with name support
   renderer.register('{{_variable:(.-)_}}', function(matched_expression)
     -- Extract the variable name from the pattern
-        print("Matched Expression: " .. vim.inspect(matched_expression)) -- Debugging
-    local var_name = matched_expression:match('{{_variable:(.-)_}}')
-        print("Var Name (Initial): " .. vim.inspect(var_name)) -- Debugging
+    local var_name = matched_expression
     if not var_name then
         vim.notify("Invalid variable pattern: " .. matched_expression, vim.log.levels.ERROR)
         return ""
@@ -51,7 +52,7 @@ renderer.register_builtins = function()
   end)
   
   -- Keep the original variable handler for backward compatibility
-  renderer.register('{{_variable_}}', function(_) return vim.fn.input('Variable name: ', '') end)
+  renderer.register('{{_variable_}}', function(_) return vim.fn.input('Random Variable name: ', '') end)
   
   renderer.register('{{_upper_file_}}', function(_) return string.upper(fn.expand('%:t:r')) end)
   renderer.register('{{_lua:(.-)_}}', function(matched_expression)
