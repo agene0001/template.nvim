@@ -2,6 +2,9 @@ local temp = {}
 local uv, api, fn, fs = vim.loop, vim.api, vim.fn, vim.fs
 local sep = uv.os_uname().sysname == 'Windows_NT' and '\\' or '/'
 
+-- Variable storage for template processing session
+local session_variables = {}
+
 local cursor_pattern = '{{_cursor_}}'
 local renderer = {
   expressions = {},
@@ -25,7 +28,26 @@ renderer.register_builtins = function()
   renderer.register('{{_file_name_}}', function(_) return fn.expand('%:t:r') end)
   renderer.register('{{_author_}}', function(_) return temp.author end)
   renderer.register('{{_email_}}', function(_) return temp.email end)
+  
+  -- Enhanced variable handler with name support
+  renderer.register('{{_variable:(.-)_}}', function(matched_expression)
+    -- Extract the variable name from the pattern
+    local var_name = matched_expression:match('{{_variable:(.-)_}}')
+    
+    -- If we already have this variable in the current session, use it
+    if session_variables[var_name] then
+      return session_variables[var_name]
+    end
+    
+    -- Otherwise prompt for it and store it
+    local value = vim.fn.input(var_name .. ' name: ', '')
+    session_variables[var_name] = value
+    return value
+  end)
+  
+  -- Keep the original variable handler for backward compatibility
   renderer.register('{{_variable_}}', function(_) return vim.fn.input('Variable name: ', '') end)
+  
   renderer.register('{{_upper_file_}}', function(_) return string.upper(fn.expand('%:t:r')) end)
   renderer.register('{{_lua:(.-)_}}', function(matched_expression)
     return load('return ' .. matched_expression)()
@@ -267,6 +289,9 @@ function temp:generate_template(args)
 
   local lines = {}
 
+  -- Clear session variables for new template
+  session_variables = {}
+
   async_read(
     tpl,
     ---@diagnostic disable-next-line: redefined-local
@@ -421,6 +446,9 @@ function temp:generate_project(args)
   local current_path = fn.getcwd()
   local project_path = current_path .. sep .. data.project_name
   
+  -- Clear session variables for new project
+  session_variables = {}
+  
   -- Process the entire project
   if process_project_directory(template_dir, project_path) then
     vim.notify('[Template.nvim] Project generated successfully: ' .. data.project_name, vim.log.levels.INFO)
@@ -489,6 +517,12 @@ function temp.setup(config)
       end
     end,
   })
+end
+
+-- Clear variable session cache (useful for testing)
+temp.clear_variables = function()
+  session_variables = {}
+  vim.notify("Variable cache cleared", vim.log.levels.INFO)
 end
 
 return temp
