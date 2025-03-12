@@ -90,8 +90,11 @@ function temp.get_temp_list()
     end
     if not ft then
       if name:match("%.h$") then
-        ft = "cpp"  -- or "c" for C headers
+        ft = "c"  -- or "c" for C headers
       end
+       elseif name:match("%.html?$") then
+    ft = "html"  -- Ensure HTML files are detected
+  end
     end
     if ft then
       if not res[ft] then
