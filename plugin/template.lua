@@ -48,3 +48,28 @@ end, {
     end
   end,
 })
+-- TemProject command
+api.nvim_create_user_command('TemProject', function(args)
+  require('template'):generate_project(args.fargs)
+end, {
+  nargs = '+',
+  complete = function(arg, line)
+    local temp = require('template')
+    if not temp.temp_dir then
+      vim.notify('[template.nvim] please config the temp_dir variable')
+      return {}
+    end
+    
+    -- Get available project templates
+    local templates = temp.get_project_templates()
+    
+    -- Filter templates based on arg
+    if arg and #arg > 0 then
+      return vim.tbl_filter(function(template)
+        return string.match(template, '^' .. arg)
+      end, templates)
+    end
+    
+    return templates
+  end,
+})

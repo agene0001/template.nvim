@@ -88,7 +88,11 @@ function temp.get_temp_list()
       local first_row = vim.fn.readfile(name, '', 1)[1]
       ft = vim.split(first_row, '%s')[2]
     end
-
+    if not ft then
+      if name:match("%.h$") then
+        ft = "cpp"  -- or "c" for C headers
+      end
+    end
     if ft then
       if not res[ft] then
         res[ft] = {}
@@ -100,6 +104,32 @@ function temp.get_temp_list()
   end
 
   return res
+end
+
+-- Get list of project templates
+function temp.get_project_templates()
+  local project_dir = fs.normalize(temp.temp_dir .. sep .. 'project_templates')
+  
+  -- Check if project_templates directory exists
+  local stat = uv.fs_stat(project_dir)
+  if not stat or stat.type ~= 'directory' then
+    return {}
+  end
+  
+  local templates = {}
+  
+  -- Find all directories in project_templates
+  local dirs = vim.fs.find(function(name, _)
+    return true  -- match all
+  end, { type = 'directory', path = project_dir, limit = math.huge })
+  
+  -- Add directory names as available templates
+  for _, dir in ipairs(dirs) do
+    local name = vim.fn.fnamemodify(dir, ':t')
+    table.insert(templates, name)
+  end
+  
+  return templates
 end
 
 local function expand_expressions(line)
@@ -128,16 +158,47 @@ local function create_and_load(file)
   vim.cmd(':e ' .. file)
 end
 
+-- Create directory if it doesn't exist
+local function create_directory(path)
+  local stat = uv.fs_stat(path)
+  if stat and stat.type == 'directory' then
+    return true
+  end
+  
+  return uv.fs_mkdir(path, 493) -- 0755 permissions
+end
+
+-- Parse arguments for Template command
 local function parse_args(args)
   local data = {}
-
-  for _, v in pairs(args) do
-    if v:find('%.%w+') then
-      data.file = v
-    end
-    data.tp_name = v
+  
+  -- If there's only one argument, it's the template name
+  if #args == 1 then
+    data.tp_name = args[1]
+    data.file = args[1]
+  -- If there are two or more arguments, first is file name, second is template name
+  elseif #args >= 2 then
+    data.file = args[1]
+    data.tp_name = args[2]
   end
+  
+  return data
+end
 
+-- Parse arguments for TemProject command
+local function parse_project_args(args)
+  local data = {}
+  
+  -- If there's only one argument, it's the project template name
+  if #args == 1 then
+    data.tp_name = args[1]
+    data.project_name = args[1]
+  -- If there are two or more arguments, first is project name, second is template name
+  elseif #args >= 2 then
+    data.project_name = args[1]
+    data.tp_name = args[2]
+  end
+  
   return data
 end
 
@@ -229,6 +290,129 @@ function temp:generate_template(args)
       end
     end)
   )
+end
+
+-- Process a single file from project template
+local function process_template_file(src_file, dest_file)
+  local stat = uv.fs_stat(src_file)
+  if not stat then
+    vim.notify('[Template.nvim] Failed to stat file: ' .. src_file, vim.log.levels.ERROR)
+    return false
+  end
+  
+  -- Read source file
+  local fd = uv.fs_open(src_file, 'r', 438)
+  if not fd then
+    vim.notify('[Template.nvim] Failed to open file: ' .. src_file, vim.log.levels.ERROR)
+    return false
+  end
+  
+  local data = uv.fs_read(fd, stat.size, 0)
+  uv.fs_close(fd)
+  
+  if not data then
+    vim.notify('[Template.nvim] Failed to read file: ' .. src_file, vim.log.levels.ERROR)
+    return false
+  end
+  
+  -- Process file content with template engine
+  data = data:gsub('\r\n?', '\n')
+  local lines = vim.split(data, '\n')
+  local processed_lines = {}
+  
+  local skip_lines = 0
+  for i, line in ipairs(lines) do
+    if i == 1 then
+      local line_data = vim.split(line, '%s')
+      if #line_data == 2 and ";;" == line_data[1] then
+        skip_lines = skip_lines + 1
+        goto continue
+      end
+    end
+    
+    local processed_line = renderer.render_line(line)
+    table.insert(processed_lines, processed_line)
+    
+    ::continue::
+  end
+  
+  -- Write processed content to destination file
+  local out_fd = uv.fs_open(dest_file, 'w', 438)
+  if not out_fd then
+    vim.notify('[Template.nvim] Failed to create file: ' .. dest_file, vim.log.levels.ERROR)
+    return false
+  end
+  
+  uv.fs_write(out_fd, table.concat(processed_lines, '\n'))
+  uv.fs_close(out_fd)
+  
+  return true
+end
+
+-- Recursively process a project template directory
+local function process_project_directory(src_dir, dest_dir)
+  -- Create destination directory
+  if not create_directory(dest_dir) then
+    vim.notify('[Template.nvim] Failed to create directory: ' .. dest_dir, vim.log.levels.ERROR)
+    return false
+  end
+  
+  -- Get all entries in source directory
+  local dir_handle = uv.fs_scandir(src_dir)
+  if not dir_handle then
+    vim.notify('[Template.nvim] Failed to scan directory: ' .. src_dir, vim.log.levels.ERROR)
+    return false
+  end
+  
+  local name, type
+  while true do
+    name, type = uv.fs_scandir_next(dir_handle)
+    if not name then break end
+    
+    local src_path = src_dir .. sep .. name
+    local dest_path = dest_dir .. sep .. name
+    
+    if type == 'directory' then
+      -- Recursively process subdirectory
+      process_project_directory(src_path, dest_path)
+    else
+      -- Process file
+      process_template_file(src_path, dest_path)
+    end
+  end
+  
+  return true
+end
+
+-- Generate a complete project from template
+function temp:generate_project(args)
+  local data = parse_project_args(args)
+  if not data.tp_name or not data.project_name then
+    vim.notify('[Template.nvim] Missing project name or template name', vim.log.levels.ERROR)
+    return
+  end
+  
+  -- Get source template directory
+  local template_dir = fs.normalize(temp.temp_dir .. sep .. 'project_templates' .. sep .. data.tp_name)
+  local stat = uv.fs_stat(template_dir)
+  if not stat or stat.type ~= 'directory' then
+    vim.notify('[Template.nvim] Project template not found: ' .. data.tp_name, vim.log.levels.ERROR)
+    return
+  end
+  
+  -- Create destination directory
+  local current_path = fn.getcwd()
+  local project_path = current_path .. sep .. data.project_name
+  
+  -- Process the entire project
+  if process_project_directory(template_dir, project_path) then
+    vim.notify('[Template.nvim] Project generated successfully: ' .. data.project_name, vim.log.levels.INFO)
+    
+    -- Open the project directory in Neovim
+    vim.cmd('cd ' .. vim.fn.fnameescape(project_path))
+  else
+    vim.notify('[Template.nvim] Failed to generate project: ' .. data.project_name, vim.log.levels.ERROR)
+  end
 end
 
 function temp.in_template(buf)
